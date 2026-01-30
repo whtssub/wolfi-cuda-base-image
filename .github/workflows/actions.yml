@@ -15,7 +15,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Install deps
         run: pip install dagger-io
@@ -31,5 +31,4 @@ jobs:
         run: python main.py
         env:
           USERNAME: ${{ env.REPOSITORY_OWNER }}
-          PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-          REPOSITORY: ${{ github.event.repository.name }}
+          PASSWORD: ${{ secrets.GH_PAT }}
