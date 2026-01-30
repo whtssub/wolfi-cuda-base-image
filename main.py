@@ -29,11 +29,11 @@ PYTHON_VERSIONS = ["3.11", "3.12"]
 # Note: CUDA support on ARM64 may be limited depending on the packages available
 PLATFORMS = ["linux/amd64", "linux/arm64"]
 
-# Framework configurations: (tag_name, packages_to_install)
+# Framework configurations: (tag_name, conda_packages_to_install)
 FRAMEWORK_CONFIGS = {
     "base": "",
-    "pytorch": "py3-pytorch",
-    "tensorflow": "py3-tensorflow",
+    "pytorch": "pytorch",
+    "tensorflow": "tensorflow",
 }
 
 
@@ -57,6 +57,7 @@ def build_container(
     client: dagger.Client,
     base_image: str,
     package_str: str,
+    conda_packages_str: str,
     cuda_version: str,
     python_version: str,
     framework: str,
@@ -71,7 +72,8 @@ def build_container(
     Args:
         client: Dagger client instance
         base_image: Base container image
-        package_str: Space-separated list of packages to install
+        package_str: Space-separated list of APK packages to install
+        conda_packages_str: Space-separated list of conda packages to install
         cuda_version: CUDA version for labels
         python_version: Python version for labels
         framework: Framework name for labels
@@ -94,15 +96,25 @@ def build_container(
         .from_(base_image)
         .with_user("root")
         .with_workdir("/app")
-        # Install CUDA toolkit and framework packages
+        # Install base packages from Wolfi
         .with_exec([
             "/bin/sh", "-c",
             f"apk update && apk add --no-cache {package_str}"
         ])
-        # Set CUDA environment variables
-        .with_env_variable("CUDA_HOME", "/usr/local/cuda")
-        .with_env_variable("PATH", "/usr/local/cuda/bin:$PATH")
-        .with_env_variable("LD_LIBRARY_PATH", "/usr/local/cuda/lib64:$LD_LIBRARY_PATH")
+        # Install micromamba for CUDA packages
+        .with_exec([
+            "/bin/sh", "-c",
+            'curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C /usr/local bin/micromamba'
+        ])
+        # Install CUDA and framework packages via micromamba
+        .with_exec([
+            "/bin/sh", "-c",
+            f'/usr/local/bin/micromamba install -y -n base -c conda-forge {conda_packages_str} && /usr/local/bin/micromamba clean --all --yes'
+        ])
+        # Set environment variables
+        .with_env_variable("MAMBA_ROOT_PREFIX", "/root/micromamba")
+        .with_env_variable("PATH", "/root/micromamba/bin:/usr/local/cuda/bin:$PATH")
+        .with_env_variable("LD_LIBRARY_PATH", "/root/micromamba/lib:$LD_LIBRARY_PATH")
         # Add OCI labels for better discoverability
         .with_label("org.opencontainers.image.source", f"https://github.com/{username}/{repository}")
         .with_label("org.opencontainers.image.description", f"Wolfi-based CUDA {cuda_version} image with Python {python_version}")
@@ -142,26 +154,28 @@ async def build_and_publish_image(
     img_ref = get_image_reference(os_version, cuda_version, framework, python_version)
     logger.info(f"Building image: {img_ref}")
 
-    # Use Chainguard's CUDA-enabled Wolfi base image
+    # Use Chainguard's Wolfi base image
     base_image = "cgr.dev/chainguard/wolfi-base"
 
-    # Build package list
+    # Build package list with Wolfi package names
+    # Note: CUDA packages are installed via micromamba from conda-forge
     packages = [
         f"python-{python_version}",
         f"py{python_version}-pip",
-        "cuda-toolkit",
-        "cuda-cudnn",
-        "libcublas",
-        "libcufft",
-        "libcurand",
-        "libcusolver",
-        "libcusparse",
+        "curl",
+        "bash",
     ]
 
-    if framework_packages:
-        packages.append(framework_packages)
-
     package_str = " ".join(packages)
+    
+    # Build conda packages list for CUDA and frameworks
+    cuda_major = cuda_version.rsplit(".", 1)[0]  # e.g., "12.4"
+    conda_packages = [f"cuda-toolkit={cuda_major}"]
+    
+    if framework_packages:
+        conda_packages.append(framework_packages)
+    
+    conda_packages_str = " ".join(conda_packages)
 
     try:
         secret = client.set_secret("password", password)
@@ -178,6 +192,7 @@ async def build_and_publish_image(
                     client=client,
                     base_image=base_image,
                     package_str=package_str,
+                    conda_packages_str=conda_packages_str,
                     cuda_version=cuda_version,
                     python_version=python_version,
                     framework=framework,
@@ -203,6 +218,7 @@ async def build_and_publish_image(
                 client=client,
                 base_image=base_image,
                 package_str=package_str,
+                conda_packages_str=conda_packages_str,
                 cuda_version=cuda_version,
                 python_version=python_version,
                 framework=framework,
