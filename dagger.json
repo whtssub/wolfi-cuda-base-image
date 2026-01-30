@@ -1,5 +1,6 @@
 {
-  "name": "dagger",
+  "name": "wolfi-cuda-base-image",
+  "description": "Build lightweight CUDA-enabled Docker images based on Wolfi Linux",
   "dependencies": [
     {
       "name": "registry-config",
@@ -8,10 +9,6 @@
     {
       "name": "docker",
       "source": "github.com/purpleclay/daggerverse/docker@43c1c55dadf15afc9ba401dc59e04baaa3802cca"
-    },
-    {
-      "name": "docker",
-      "source": "github.com/opopops/docker@230c9f3121bd02566d86766fd333d65c97166454"
     }
   ],
   "engineVersion": "v0.11.4"

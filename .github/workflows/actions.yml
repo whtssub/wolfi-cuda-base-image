@@ -1,7 +1,11 @@
-name: Run dagger to build and publish cuda images to ghcr.io
+name: Build and Publish CUDA Images
+
 on:
   push:
     branches: [main]
+  # workflow_dispatch:
+  # schedule:
+  #   - cron: '0 0 * * 0'  # Weekly on Sundays
 
 jobs:
   build-publish:
@@ -11,20 +15,21 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install deps
         run: pip install dagger-io
-        
+
       - name: Install Dagger CLI
         run: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
 
-      - name: Convert repository owner and repository name to lowercase
+      - name: Convert repository owner to lowercase
         run: |
           echo "REPOSITORY_OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Run dagger pipeline
         run: python main.py
         env:
-            username: ${{ env.REPOSITORY_OWNER }}
-            password: ${{ secrets.GH_PAT }}
+          USERNAME: ${{ env.REPOSITORY_OWNER }}
+          PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.event.repository.name }}
